@@ -31,10 +31,10 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin 
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin 
  
-     # 3. Generate SBOM using explicit shell redirection 
-      - name: Generate Full SBOM 
-        run: | 
-          syft dir:./node_modules --exclude "" -o spdx-json > juiceshop.sbom.spdx.json 
+      # 3. Generate SBOM using explicit shell redirection
+      - name: Generate Full SBOM
+        run: |
+          syft dir:./node_modules --exclude "" -o spdx-json > juiceshop.sbom.spdx.json
           ls -lh juiceshop.sbom.spdx.json 
  
       # 4. Scan SBOM with Grype for vulnerabilities
@@ -51,8 +51,8 @@ jobs:
       # 6. Run GuardDog to detect malicious packages
       - name: Scan with GuardDog
         run: |
-          guarddog pypi --json pyproject.toml package.json > guarddog-results.json || true
-          guarddog pypi pyproject.toml package.json > guarddog-results.txt || true
+          guarddog pypi package.json --json > guarddog-results.json || true
+          guarddog pypi package.json > guarddog-results.txt || true
           cat guarddog-results.txt
 
       # 7. Run Socket Security scan
