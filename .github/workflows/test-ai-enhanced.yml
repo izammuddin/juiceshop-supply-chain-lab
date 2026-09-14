@@ -1,0 +1,185 @@
+name: AI-Enhanced Software Testing
+
+on:
+  push:
+    branches: [ "master", "main" ]
+    paths:
+      - 'vulnerable_app.py'
+      - 'test_vulnerable_app.py'
+      - 'requirements-testing.txt'
+      - '.github/workflows/test-ai-enhanced.yml'
+  pull_request:
+    branches: [ "master", "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-testing.txt
+
+      - name: Run pytest tests
+        run: |
+          pytest test_vulnerable_app.py -v --tb=short --color=yes
+
+      - name: Generate coverage report
+        run: |
+          pytest test_vulnerable_app.py \
+            --cov=vulnerable_app \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+      - name: Archive coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-python-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 30
+
+      - name: Archive test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-python-${{ matrix.python-version }}
+          path: |
+            .pytest_cache/
+          retention-days: 30
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install security tools
+        run: |
+          pip install bandit safety
+
+      - name: Run Bandit security scan
+        run: |
+          bandit -r vulnerable_app.py -f json -o bandit-report.json || true
+
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-scan-results
+          path: bandit-report.json
+          retention-days: 30
+
+  vulnerability-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-testing.txt
+
+      - name: Run SQL Injection tests
+        run: |
+          pytest test_vulnerable_app.py::TestSQLInjectionVulnerability -v
+        continue-on-error: true
+
+      - name: Run Command Injection tests
+        run: |
+          pytest test_vulnerable_app.py::TestCommandInjectionVulnerability -v
+        continue-on-error: true
+
+      - name: Run XSS Vulnerability tests
+        run: |
+          pytest test_vulnerable_app.py::TestXSSVulnerability -v
+        continue-on-error: true
+
+      - name: Run Access Control tests
+        run: |
+          pytest test_vulnerable_app.py::TestAccessControl -v
+        continue-on-error: true
+
+  generate-report:
+    runs-on: ubuntu-latest
+    needs: [test, security-scan, vulnerability-analysis]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate test summary
+        run: |
+          echo "## 🧪 AI-Enhanced Testing Report" > test-summary.md
+          echo "" >> test-summary.md
+          echo "### Test Execution Status" >> test-summary.md
+          echo "- **Test Job:** ${{ needs.test.result }}" >> test-summary.md
+          echo "- **Security Scan:** ${{ needs.security-scan.result }}" >> test-summary.md
+          echo "- **Vulnerability Analysis:** ${{ needs.vulnerability-analysis.result }}" >> test-summary.md
+          echo "" >> test-summary.md
+          echo "### Artifacts Generated" >> test-summary.md
+          echo "- Coverage reports available in artifacts" >> test-summary.md
+          echo "- Security scan results available" >> test-summary.md
+          echo "- Test results for all Python versions" >> test-summary.md
+          echo "" >> test-summary.md
+          echo "### Key Metrics" >> test-summary.md
+          echo "- Vulnerabilities Demonstrated: SQL Injection, Command Injection, XSS, Broken Access Control" >> test-summary.md
+          echo "- Test Framework: pytest" >> test-summary.md
+          echo "- Coverage Tool: pytest-cov" >> test-summary.md
+          echo "- Security Scanner: Bandit" >> test-summary.md
+
+      - name: Post test summary
+        run: |
+          cat test-summary.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload final report
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-test-report
+          path: test-summary.md
+          retention-days: 90
