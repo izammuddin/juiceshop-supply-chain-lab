@@ -161,10 +161,11 @@ class TestSQLInjectionVulnerability:
     def test_sql_injection_with_special_chars(self, client):
         """Test SQL injection with various special characters."""
         injection_payloads = [
-            "admin'; DROP TABLE users; -- ",
-            "'; DELETE FROM users; -- ",
+            "admin' -- ",
+            "admin' /*",
             "1' AND '1'='1",
             "admin'#",
+            "' OR '1'='1' -- ",
         ]
         for payload_username in injection_payloads:
             response = client.post('/login',
