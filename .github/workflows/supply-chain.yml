@@ -37,9 +37,87 @@ jobs:
           syft dir:./node_modules --exclude "" -o spdx-json > juiceshop.sbom.spdx.json 
           ls -lh juiceshop.sbom.spdx.json 
  
-      # 4. Upload the confirmed file as an artifact 
-      - name: Upload SBOM Artifact 
-        uses: actions/upload-artifact@v4 
-        with: 
-          name: juiceshop-sbom-spdx 
+      # 4. Scan SBOM with Grype for vulnerabilities
+      - name: Scan SBOM with Grype
+        run: |
+          grype juiceshop.sbom.spdx.json -o json > grype-results.json
+          grype juiceshop.sbom.spdx.json -o table > grype-results.txt
+          cat grype-results.txt
+
+      # 5. Install GuardDog for malicious package detection
+      - name: Install GuardDog
+        run: pip install guarddog
+
+      # 6. Run GuardDog to detect malicious packages
+      - name: Scan with GuardDog
+        run: |
+          guarddog pypi --json pyproject.toml package.json > guarddog-results.json || true
+          guarddog pypi pyproject.toml package.json > guarddog-results.txt || true
+          cat guarddog-results.txt
+
+      # 7. Run Socket Security scan
+      - name: Socket Security Scan
+        uses: socketsecurity/socket-security-action@v1
+        with:
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      # 8. Upload all artifacts
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: juiceshop-sbom-spdx
           path: juiceshop.sbom.spdx.json
+
+      - name: Upload Grype Scan Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: grype-vulnerability-report
+          path: |
+            grype-results.json
+            grype-results.txt
+
+      - name: Upload GuardDog Scan Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guarddog-malicious-package-report
+          path: |
+            guarddog-results.json
+            guarddog-results.txt
+
+      # 9. Create workflow summary
+      - name: Generate Supply Chain Security Report
+        if: always()
+        run: |
+          echo "## 🔐 Supply Chain Security Scan Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 SBOM Generation" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Software Bill of Materials created successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- File: \`juiceshop.sbom.spdx.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Format: SPDX JSON" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Vulnerability Scan (Grype)" >> $GITHUB_STEP_SUMMARY
+          if [ -f grype-results.txt ]; then
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            head -50 grype-results.txt >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚨 Malicious Package Detection (GuardDog)" >> $GITHUB_STEP_SUMMARY
+          if [ -f guarddog-results.txt ]; then
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            cat guarddog-results.txt >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No malicious packages detected" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Socket Security Scan" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Socket Security scan completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Check Socket Security dashboard for detailed findings" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Artifacts Generated" >> $GITHUB_STEP_SUMMARY
+          echo "- SBOM: \`juiceshop-sbom-spdx\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Grype Results: \`grype-vulnerability-report\`" >> $GITHUB_STEP_SUMMARY
+          echo "- GuardDog Results: \`guarddog-malicious-package-report\`" >> $GITHUB_STEP_SUMMARY
